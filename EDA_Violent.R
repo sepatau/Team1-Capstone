@@ -13,7 +13,7 @@ library(ggplot2)
 library(data.table)
 library(RColorBrewer)
 library(gridExtra)
-library(maps)
+library(corrplot)
 
 ###############################################################################
 # Import data sets
@@ -36,16 +36,17 @@ train <- data %>% sample_frac(0.8, replace = FALSE)
 test <- data %>% setdiff(train)
 
 ###############################################################################
-# Relationship between violent crime rate and homicide rate
+# Relationship between annual violent crime rate and homicide rate
 ###############################################################################
 
 data %>%
-  ggplot(aes(x = HOMICIDE_RATE, y = ANNUAL_VIOLENT_CRIMES, 
+  ggplot(aes(x = VIOLENT_CRIME_RATE, y = ANNUAL_VIOLENT_CRIMES, 
              color = FUNDED_IND, shape = FUNDED_IND, size = FUND_AMOUNT)) + 
-  geom_jitter() +
-  theme_minimal() +
-  labs(title = "Annual Violent Crimes vs Homicide Rate with Funding Indicator", 
-       y = "Annual Violent Crimes", x = "Homicide Rate")
+  geom_jitter(alpha = 0.7) +
+  theme_bw() +
+  scale_color_manual(values = c("gold", "purple4")) +
+  labs(title = "Annual Violent Crimes vs Violent Crime Rate", 
+       y = "Annual Violent Crimes", x = "Violent Crime Rate")
 
 ###############################################################################
 # Plot most dangerous counties
@@ -55,98 +56,32 @@ data %>%
   top_n(25, ANNUAL_VIOLENT_CRIMES) %>%
   ggplot(aes(x = reorder(CS, ANNUAL_VIOLENT_CRIMES), y = ANNUAL_VIOLENT_CRIMES, 
              fill = FUNDED_IND)) + 
-  geom_bar(stat = "identity") +
+  geom_bar(stat = "identity", alpha = 0.7) +
   coord_flip() +
-  theme_minimal() +
-  labs(title = "Most Dangerous Counties by Annual Number of Violent Crimes with Funding Indicator", y = "", x = "")
+  theme_bw() +
+  scale_fill_manual(values = c("gold", "purple4")) +
+  labs(title = "Highest Annual Number of Violent Crimes with Funding Indicator", y = "", x = "")
+
 
 ###############################################################################
-# Scatter Plots with Regression Top 4 highest correlations
+# Correlations
 ###############################################################################
 
-crime_cor %>% top_n(6, abs(ANNUAL_VIOLENT_CRIMES))
+# Create data frame with only numeric variables
+data_numeric <- data_sca %>% select(-V1, -State, -COUNTY, -STATE_SHORT)
 
-plot1 <- train %>%
-  ggplot(aes(x = CHLAMYDIA_CASES, y = ANNUAL_VIOLENT_CRIMES, 
-             color = FUNDED_IND, shape = FUNDED_IND)) + 
-  geom_jitter() +
-  geom_smooth(method = "gam") +
-  scale_shape(solid = FALSE) +
-  theme_minimal() +
-  guides(color = FALSE, shape = FALSE) +
-  labs(title = "Chlamydia Cases vs Annual Violent Crimes", 
-       y = "Annual Violent Crimes", x = "Chlamydia Cases")
+# Create correlation matrix and convert into a data frame
+data_cor <- cor(data_numeric)
+class(data_cor)
+dim(data_cor)
+data_cor <- as.data.frame(data_cor)
 
-plot2 <- train %>%
-  ggplot(aes(x = PREMATURE_DEATHS, y = ANNUAL_VIOLENT_CRIMES, 
-             color = FUNDED_IND, shape = FUNDED_IND)) + 
-  geom_jitter() +
-  geom_smooth(method = "gam") +
-  scale_shape(solid = FALSE) +
-  theme_minimal() +
-  guides(color = FALSE, shape = FALSE) +
-  labs(title = "Premature Deaths vs Annual Violent Crimes", 
-       y = "Annual Violent Crimes", x = "Premature Deaths")
+# Pull correlations with variable of interest and create table
+data_cor$variable <- rownames(data_cor)
 
-plot3 <- train %>%
-  ggplot(aes(x = CHILD_TOTAL_DEATHS, y = ANNUAL_VIOLENT_CRIMES, 
-             color = FUNDED_IND, shape = FUNDED_IND)) + 
-  geom_jitter() +
-  geom_smooth(method = "gam") +
-  scale_shape(solid = FALSE) +
-  theme_minimal() +
-  guides(color = FALSE, shape = FALSE) +
-  labs(title = "Child Total Deaths vs Annual Violent Crimes", 
-       y = "Annual Violent Crimes", x = "Child Total Deaths")
+data_cor %>% 
+  select(ANNUAL_VIOLENT_CRIMES, variable) %>%
+  filter(variable != "ANNUAL_VIOLENT_CRIMES") %>%
+  top_n(11, ANNUAL_VIOLENT_CRIMES)
 
-plot4 <- train %>%
-  ggplot(aes(x = SINGLE_PARENT_HOUSEHOLDS, y = ANNUAL_VIOLENT_CRIMES, 
-             color = FUNDED_IND, shape = FUNDED_IND)) + 
-  geom_jitter() +
-  geom_smooth(method = "gam") +
-  scale_shape(solid = FALSE) +
-  theme_minimal() +
-  guides(color = FALSE, shape = FALSE) +
-  labs(title = "Single Parent Household vs Annual Violent Crimes", 
-       y = "Annual Violent Crimes", x = "Single Parent Household")
 
-grid.arrange(plot1, plot2, plot3, plot4, ncol=2)
-
-###############################################################################
-# Chloropleth by State
-###############################################################################
-
-train_state <- train %>% 
-  group_by(State) %>% 
-  summarise(state_violence = sum(ANNUAL_VIOLENT_CRIMES))
-
-train_state <- as.data.frame(train_state)
-colnames(train_state) <- c("state", "violence")
-train_state
-
-states_map <- map_data("state")
-
-train_statesmap <- merge(states_map, train_state, by.x = "region", by.y = "state")
-
-train_statesmap %>%
-  ggplot(aes(map_id = region, fill = violence)) +
-  geom_map(map = states_map, colour = "black") +
-  expand_limits(x = states_map$long, y = states_map$lat) +
-  coord_map("polyconic")
-
-###############################################################################
-# Correlation Plot
-###############################################################################
-
-crime_cor <- train %>% select(-State, -COUNTY, -STATE_SHORT, -CS, -FUNDED_IND) %>% cor()
-crime_cor <- as.data.frame(crime_cor)
-crime_cor$variablenames <- colnames(crime_cor)
-crime_cor <- crime_cor %>% select(variablenames, ANNUAL_VIOLENT_CRIMES)
-rownames(crime_cor) <- 1:59
-crime_cor$index <- 1:nrow(crime_cor)
-crime_cor$facet <- rep(1, 59)
-
-crime_cor %>%
-  ggplot(aes(x = variablenames, y = facet, fill = ANNUAL_VIOLENT_CRIMES)) + 
-  geom_tile() +
-  facet_grid(~index)
